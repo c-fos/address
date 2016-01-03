@@ -7,13 +7,15 @@
 # Импорт необходимых модулей
 
 import pprint
-from openpyxl import load_workbook, Workbook, utils
 import logging
 import argparse
-import os
+
+from openpyxl import load_workbook
+import xlsxwriter
 
 logger = logging.getLogger()
 logging.basicConfig(filename='test.log', filemode='w', level=logging.DEBUG)
+
 
 def compare_sections(main_dict, new_dict):
     for section, s_value in new_dict['sections'].items():
@@ -45,7 +47,7 @@ def compare_sections(main_dict, new_dict):
                 logger.debug('Пошли по ветке 2. добавили в секцию бн')
                 add_accounts(main_dict['sections']['бн'], s_value)
             else:
-                #вариант 4
+                # вариант 4
                 logger.debug('Пошли по ветке 4')
                 add_section(main_dict, section, s_value)
 
@@ -55,14 +57,17 @@ def add_accounts(main_section, new_section):
         assert acc not in main_section['accounts']
         main_section['accounts'][acc] = a_value
 
+
 def add_section(main_dict, section_name, new_section):
     main_dict['sections'][section_name] = new_section
+
 
 def area_recalc(section):
     area = 0
     for acc, a_value in section['accounts'].items():
         area += a_value['owarea']
     section['meta']['full_area'] = area
+
 
 def get_prem_type(main_dict, addr):
     if None in main_dict['sections'] and len(main_dict['sections']) == 1:
@@ -80,6 +85,7 @@ def get_prem_type(main_dict, addr):
         logger.warning('У адреса {} изменет prem_type на {}'.format(addr, new_prem_type))
         main_dict['meta']['prem_type'] = new_prem_type
 
+
 def postprocessing(data_str):
     for addr, a_value in data_str.items():
         get_prem_type(a_value, addr)
@@ -94,15 +100,13 @@ def write_xlsx(data_str, filename):
     xlsx таблица.
 
     """
-    xlsx_wb = Workbook()
-    ws = xlsx_wb.active
+    workbook = xlsxwriter.Workbook(filename, {'constant_memory': True})
+    worksheet = workbook.add_worksheet()
     columns = ['AREA', 'DISTRICT', 'CITY', 'STREET', 'BUILDING', 'BILDBULK', 'BSECTION', 'FLAT', 'FSECTION', 'CONTRNUM',
                'FULLAREA', 'PREMTYPE', 'OWTYPE', 'OWAREA']
-    column_name_dict = {name: utils.get_column_letter(ind + 1) for ind, name in enumerate(columns)}
-    # заголовок
-    for name in columns:
-        ws.cell("{0}{1}".format(column_name_dict[name], 1)).value = str(name)
-    row_number = 1
+    row_number = 0
+    for ind, name in enumerate(columns):
+        worksheet.write(row_number, ind, name)
     for addr, a_value in data_str.items():
         for section, s_value in a_value['sections'].items():
             for acc, acc_value in s_value['accounts'].items():
@@ -121,47 +125,19 @@ def write_xlsx(data_str, filename):
                             'PREMTYPE': a_value['meta']['prem_type'],
                             'OWTYPE': 'AREA',
                             'OWAREA': acc_value['owarea']}
-                for col_name in columns:
-                    ws.cell("{0}{1}".format(column_name_dict[col_name], row_number)).value = tmp_data[col_name]
-    # добавляем фильтры
-    ws.auto_filter.ref = "A1:M1"
-
-    ws.column_dimensions[column_name_dict['AREA']].width = 20.0
-    ws.column_dimensions[column_name_dict['DISTRICT']].width = 20.0
-    ws.column_dimensions[column_name_dict['CITY']].width = 20.0
-    ws.column_dimensions[column_name_dict['STREET']].width = 20.0
-    ws.column_dimensions[column_name_dict['BUILDING']].width = 20.0
-    ws.column_dimensions[column_name_dict['BILDBULK']].width = 20.0
-    ws.column_dimensions[column_name_dict['BSECTION']].width = 20.0
-    ws.column_dimensions[column_name_dict['FLAT']].width = 20.0
-    ws.column_dimensions[column_name_dict['FSECTION']].width = 20.0
-    ws.column_dimensions[column_name_dict['CONTRNUM']].width = 20.0
-    ws.column_dimensions[column_name_dict['FULLAREA']].width = 20.0
-    ws.column_dimensions[column_name_dict['PREMTYPE']].width = 20.0
-    ws.column_dimensions[column_name_dict['OWTYPE']].width = 20.0
-    ws.column_dimensions[column_name_dict['OWAREA']].width = 20.0
-    xlsx_wb.save(filename=filename)
-
-
-def _set_value(ws, _letter, _number, _value, _type=''):
-    if _value is not None and not _type:
-        ws.cell("{0}{1}".format(_letter, _number)).value = _value
-    if _value is not None and _type == 's':
-        ws.cell("{0}{1}".format(_letter, _number)).value = str(_value)
-    if _value is not None and _type == 'i':
-        ws.cell("{0}{1}".format(_letter, _number)).value = int(_value)
-    if _value is not None and _type == 'f':
-        ws["{0}{1}".format(_letter, _number)] = _value + '\n'  # где _value к примеру: "=SUM(1, 1)"
+                for ind, col_name in enumerate(columns):
+                    worksheet.write(row_number, ind, tmp_data[col_name])
+    workbook.close()
 
 
 def main_dict_from_xlsx(filename):
     """
     """
-    wb = load_workbook(filename=filename,read_only=True)
+    wb = load_workbook(filename=filename, read_only=True)
     ws = wb.active
     rows = ws.rows
     # чтение и разбор строки
-    #0: 'AREA', 1: 'DISTRICT', 2: 'CITY', 3: 'STREET', 4: 'BUILDING', 5: 'BILDBULK', 6: 'BSECTION', 7: 'FLAT', 8: 'FSECTION', 9: 'CONTRNUM', 10: 'FULLAREA', 11: 'PREMTYPE', 12: 'OWTYPE', 13: 'OWAREA', 14
+    # чтения названий колонок
     name_row = next(rows)
     col_name_to_ind = {j: i for i, j in enumerate(map(lambda x: str(x.value), name_row))}
     logger.info(col_name_to_ind)
@@ -169,6 +145,7 @@ def main_dict_from_xlsx(filename):
     section_name = 'FSECTION'
     account_name = 'CONTRNUM'
     data_str = {}
+    # чтение данных
     for row_index, row in enumerate(rows):
         try:
             # address: AREA	DISTRICT	CITY	STREET	BUILDING	BILDBULK	BSECTION	FLAT
@@ -185,19 +162,19 @@ def main_dict_from_xlsx(filename):
                 if section in data_str[addr]['sections']:
                     assert(data_str[addr]['sections'][section]['meta']['full_area'] == section_area)
                     if account in data_str[addr]['sections'][section]['accounts']:
-                        logger.debug("Внимание уже есть запись с совпадающими адресом, секцией и счетом. строка {}".format(row_index + 2))
+                        logger.debug("Внимание уже есть запись с совпадающими адресом,"
+                                     " секцией и счетом. строка {}".format(row_index + 2))
                     else:
                         data_str[addr]['sections'][section]['accounts'][account] = {'owarea': area}
                 else:
                     data_str[addr]['sections'][section] = {'meta': {'full_area': section_area},
                                                            'accounts': {account: {'owarea': area}}
                                                            }
-
             else:
                 data_str[addr] = {'meta': {'prem_type': prem_type},
-                                  'sections': {section:{'meta': {'full_area': section_area},
-                                                        'accounts': {account: {'owarea': area}}
-                                                        }
+                                  'sections': {section: {'meta': {'full_area': section_area},
+                                                         'accounts': {account: {'owarea': area}}
+                                                         }
                                                }
                                   }
         except AssertionError:
@@ -205,6 +182,32 @@ def main_dict_from_xlsx(filename):
     return data_str
 
 
+def run(options):
+    debug = options.debug
+    data_str_full = main_dict_from_xlsx(options.main_file)
+    data_str_new = main_dict_from_xlsx(options.new_file)
+    if debug:
+        with open('main_dict_before.txt', 'w') as fd:
+            pprint.pprint(data_str_full, stream=fd)
+        with open('new_dict.txt', 'w') as fd:
+            pprint.pprint(data_str_new, stream=fd)
+    counter = 0
+    for key, val in data_str_new.items():
+        if key in data_str_full:
+            counter += 1
+            logger.debug('Совпадения адреса: {}'.format(key))
+            compare_sections(data_str_full[key], val)
+        else:
+            logger.debug('Адрес {} добавлен в основной файл'.format(key))
+            data_str_full[key] = val
+    postprocessing(data_str_full)
+    logger.debug('Количество адресов в основном файле: {}'.format(len(data_str_full)))
+    logger.debug('Количество адресов в добавляемом файле: {}'.format(len(data_str_new)))
+    logger.debug("Количество совпадений: {}".format(counter))
+    if debug:
+        with open('main_dict_after.txt', 'w') as fd:
+            pprint.pprint(data_str_full, stream=fd)
+    write_xlsx(data_str_full, filename='result.xlsx')
 
 if __name__ == "__main__":
     def cli():
@@ -218,30 +221,7 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser(description="Программа для объеденения двух xlsx файлов с данными по адресам")
         parser.add_argument("main_file", help="Имя основного xlsx файла")
         parser.add_argument("new_file", help="Имя нового xlsx файла")
+        parser.add_argument("-d", "--debug", dest="debug", help="Выводить отладочную информацию")
         _options = parser.parse_args()
         return _options
-
-    OPTIONS = cli()
-    OUTPUT_DIR = os.getcwd()
-    data_str_full = main_dict_from_xlsx(OPTIONS.main_file)
-    data_str_new = main_dict_from_xlsx(OPTIONS.new_file)
-    with open('main_dict_before.txt', 'w') as fd:
-        pprint.pprint(data_str_full, stream=fd)
-    with open('new_dict.txt', 'w') as fd:
-        pprint.pprint(data_str_new, stream=fd)
-    counter = 0
-    for key, val in data_str_new.items():
-        if key in data_str_full:
-            counter += 1
-            logger.debug('есть совпадения адреса: {}'.format(key))
-            compare_sections(data_str_full[key], val)
-        else:
-            logger.debug('Адрес {} добавлен в основной файл'.format(key))
-            data_str_full[key] = val
-    postprocessing(data_str_full)
-    logger.debug('количество адресов в основном файле: {}'.format(len(data_str_full)))
-    logger.debug('количество адресов в добавляемом файле: {}'.format(len(data_str_new)))
-    logger.debug("количество совпадений: {}".format(counter))
-    with open('main_dict_after.txt', 'w') as fd:
-        pprint.pprint(data_str_full, stream=fd)
-    write_xlsx(data_str_full, filename='result.xlsx')
+    run(cli())
