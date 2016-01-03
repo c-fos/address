@@ -54,7 +54,12 @@ def compare_sections(main_dict, new_dict):
 
 def add_accounts(main_section, new_section):
     for acc, a_value in new_section['accounts'].items():
-        assert acc not in main_section['accounts']
+        try:
+            assert acc not in main_section['accounts']
+        except AssertionError:
+            logger.warning("У счета {} изменилась owarea с {} на {}".format(acc,
+                                                                            main_section['accounts'][acc]['owarea'],
+                                                                            a_value['owarea']))
         main_section['accounts'][acc] = a_value
 
 
@@ -82,7 +87,7 @@ def get_prem_type(main_dict, addr):
     else:
         new_prem_type = 2
     if new_prem_type != main_dict['meta']['prem_type']:
-        logger.warning('У адреса {} изменет prem_type на {}'.format(addr, new_prem_type))
+        logger.warning('У адреса {} изменен prem_type с {} на {}'.format(addr, main_dict['meta']['prem_type'], new_prem_type))
         main_dict['meta']['prem_type'] = new_prem_type
 
 
@@ -178,14 +183,35 @@ def main_dict_from_xlsx(filename):
                                                }
                                   }
         except AssertionError:
-            logger.debug("Ошибка при обработке строки %s!", row_index + 2)
+            logger.error("Ошибка при обработке строки %s!", row_index + 2)
     return data_str
+
+
+def acc_unique_control(data_str_1, data_str_2, filename_1, filename_2):
+    acc_set_1 = get_acc_set(data_str_1, filename_1)
+    acc_set_2 = get_acc_set(data_str_2, filename_2)
+    for same_acc in acc_set_1 & acc_set_2:
+        logger.warning("Счет {} есть и в основном и в новом файлах. Следует внимательно проверить соответствие адреса,"
+                       " секции и счета".format(same_acc))
+
+
+def get_acc_set(data_str, filename):
+    acc_list = []
+    for addr, a_value in data_str.items():
+        for section, s_value in a_value['sections'].items():
+            for acc in s_value['accounts'].keys():
+                acc_list.append(acc)
+    acc_set = set(acc_list)
+    if len(acc_list) != len(acc_set):
+        logger.warning('В файле {} есть повторяющиеся счета!'.format(filename))
+    return acc_set
 
 
 def run(options):
     debug = options.debug
     data_str_full = main_dict_from_xlsx(options.main_file)
     data_str_new = main_dict_from_xlsx(options.new_file)
+    acc_unique_control(data_str_full, data_str_new, options.main_file, options.new_file)
     if debug:
         with open('main_dict_before.txt', 'w') as fd:
             pprint.pprint(data_str_full, stream=fd)
@@ -201,6 +227,7 @@ def run(options):
             logger.debug('Адрес {} добавлен в основной файл'.format(key))
             data_str_full[key] = val
     postprocessing(data_str_full)
+    _ = get_acc_set(data_str_full, 'result.xlsx')
     logger.debug('Количество адресов в основном файле: {}'.format(len(data_str_full)))
     logger.debug('Количество адресов в добавляемом файле: {}'.format(len(data_str_new)))
     logger.debug("Количество совпадений: {}".format(counter))
