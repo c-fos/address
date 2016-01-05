@@ -163,9 +163,15 @@ def main_dict_from_xlsx(filename):
             section_area = float(row[col_name_to_ind['FULLAREA']].value) if 'FULLAREA' in col_name_to_ind else None
             prem_type = row[col_name_to_ind['PREMTYPE']].value if 'PREMTYPE' in col_name_to_ind else None
             if addr in data_str:
-                assert(data_str[addr]['meta']['prem_type'] == prem_type)
+                try:
+                    assert(data_str[addr]['meta']['prem_type'] == prem_type)
+                except AssertionError:
+                    logger.warning('Для одного адреса в разных строках указан разный prem_type. Строка {}'.format(row_index + 2))
                 if section in data_str[addr]['sections']:
-                    assert(data_str[addr]['sections'][section]['meta']['full_area'] == section_area)
+                    try:
+                        assert(data_str[addr]['sections'][section]['meta']['full_area'] == section_area)
+                    except:
+                        logger.warning('Для одной секции в разных строках указана разная общая площадь. Строка {}'.format(row_index + 2))
                     if account in data_str[addr]['sections'][section]['accounts']:
                         logger.debug("Внимание уже есть запись с совпадающими адресом,"
                                      " секцией и счетом. строка {}".format(row_index + 2))
@@ -182,8 +188,8 @@ def main_dict_from_xlsx(filename):
                                                          }
                                                }
                                   }
-        except AssertionError:
-            logger.error("Ошибка при обработке строки %s!", row_index + 2)
+        except:
+            logger.exception("Ошибка при обработке строки %s!", row_index + 2)
     return data_str
 
 
